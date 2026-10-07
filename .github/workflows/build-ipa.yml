@@ -1,0 +1,75 @@
+name: Build Spendbook IPA
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Arrange files
+        run: |
+          mkdir -p Spendbook
+          for f in *.swift; do [ -e "$f" ] && mv "$f" Spendbook/; done
+          ls -R . | head -60
+
+      - name: Use the newest Xcode on the runner
+        run: |
+          ls -d /Applications/Xcode*.app
+          XCODE=$(ls -d /Applications/Xcode_*.app | grep -v -i beta | sort -V | tail -1)
+          echo "Selecting $XCODE"
+          sudo xcode-select -s "$XCODE/Contents/Developer"
+          xcodebuild -version
+
+      - name: Draw the app icon
+        run: |
+          python3 -m pip install --quiet --user pillow --break-system-packages || python3 -m pip install --quiet --user pillow
+          python3 make_icon.py
+
+      - name: Generate the Xcode project
+        run: |
+          brew install xcodegen
+          xcodegen generate
+
+      - name: Build (unsigned)
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project Spendbook.xcodeproj \
+            -target Spendbook \
+            -configuration Release \
+            -sdk iphoneos \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            build > build.log 2>&1 || true
+          grep -E "error:|BUILD" build.log | head -60 || true
+          if [ ! -d build/Release-iphoneos/Spendbook.app ]; then
+            grep -E "error:" build.log | sort -u | head -40 | sed 's/^/::error::/'
+            exit 1
+          fi
+
+      - name: Package as .ipa
+        run: |
+          mkdir -p Payload
+          cp -R build/Release-iphoneos/Spendbook.app Payload/
+          zip -qry Spendbook.ipa Payload
+          ls -lh Spendbook.ipa
+
+      - name: Upload the .ipa
+        uses: actions/upload-artifact@v4
+        with:
+          name: Spendbook-ipa
+          path: Spendbook.ipa
+
+      - name: Upload the build log if something failed
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: build.log
