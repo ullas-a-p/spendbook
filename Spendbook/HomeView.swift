@@ -8,7 +8,8 @@ struct HomeView: View {
     @Environment(\.modelContext) private var context
 
     var body: some View {
-        let stats = MonthStats(all: expenses, month: .now, budget: budget.monthly)
+        let stats = MonthStats(all: expenses, month: .now, budget: budget.monthly, daily: budget.daily)
+        let plan = budget.plan(expenses)
         let recentDays = Array(groupByDay(Array(expenses.prefix(60))).prefix(3))
 
         NavigationStack {
@@ -18,20 +19,22 @@ struct HomeView: View {
                                 subtitle: Date.now.formatted(.dateTime.weekday(.wide).day().month(.abbreviated)))
                         .padding(.top, 8)
 
-                    LimitCard(spent: stats.todaySpent, limit: stats.todayLimit, monthLeft: stats.remaining)
+                    LimitCard(plan: plan, monthLeft: stats.remaining)
 
                     monthCard(stats)
 
                     HStack(spacing: 12) {
                         statCard(title: "Today",
-                                 value: stats.todaySpent.inrWhole,
-                                 detail: "\(stats.todayExpenses.count) spend\(stats.todayExpenses.count == 1 ? "" : "s")",
-                                 color: stats.todaySpent > stats.todayLimit ? Theme.warnText : .white)
-                        statCard(title: "Safe to spend",
-                                 value: stats.safePerDay.inrWhole,
-                                 detail: "per day till month end",
-                                 color: Theme.accent)
+                                 value: plan.todaySpent.inrWhole,
+                                 detail: "of \(plan.todayLimit.inrWhole) limit",
+                                 color: plan.isOverToday ? Theme.warnText : .white)
+                        statCard(title: "This week",
+                                 value: max(plan.weekLeft, 0).inrWhole,
+                                 detail: plan.weekLeft >= 0 ? "left of \(plan.weekly.inrWhole)" : "\((-plan.weekLeft).inrWhole) over the week",
+                                 color: plan.weekLeft >= 0 ? Theme.accent : Theme.warnText)
                     }
+
+                    WeekStrip(plan: plan)
 
                     if expenses.isEmpty {
                         emptyState
@@ -47,7 +50,7 @@ struct HomeView: View {
                 .padding(.bottom, 32)
             }
             .scrollIndicators(.hidden)
-            .background(Theme.background)
+            .background(AmbientBackground())
             .toolbar(.hidden, for: .navigationBar)
         }
     }
@@ -80,7 +83,7 @@ struct HomeView: View {
         }
         .padding(18)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .card()
+        .card(28, tint: Theme.accent.opacity(0.18))
     }
 
     private func statCard(title: String, value: String, detail: String, color: Color) -> some View {

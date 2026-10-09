@@ -34,8 +34,8 @@ struct InsightsView: View {
     }
 
     var body: some View {
-        let month = MonthStats(all: expenses, month: calendarMonth, budget: budget.monthly)
-        let current = MonthStats(all: expenses, month: .now, budget: budget.monthly)
+        let month = MonthStats(all: expenses, month: calendarMonth, budget: budget.monthly, daily: budget.daily)
+        let current = MonthStats(all: expenses, month: .now, budget: budget.monthly, daily: budget.daily)
         let totals = periodTotals
         let periodTotal = totals.reduce(0) { $0 + $1.amount }
 
@@ -69,7 +69,7 @@ struct InsightsView: View {
                 .padding(.bottom, 32)
             }
             .scrollIndicators(.hidden)
-            .background(Theme.background)
+            .background(AmbientBackground())
             .navigationTitle("Insights")
         }
     }
@@ -159,7 +159,7 @@ struct InsightsView: View {
                     .lineStyle(StrokeStyle(lineWidth: 1, dash: [3, 3]))
                     .foregroundStyle(Theme.warn.opacity(0.7))
                     .annotation(position: .top, alignment: .trailing) {
-                        Text("pace \(s.pacePerDay.inrWhole)")
+                        Text("limit \(s.pacePerDay.inrWhole)")
                             .font(.system(size: 10))
                             .foregroundStyle(Theme.warnText)
                     }
@@ -236,9 +236,9 @@ struct InsightsView: View {
         }
         let over = s.overLimitDays
         if over > 0 {
-            parts.append("You went over the \(s.pacePerDay.inrWhole) daily pace on \(over) day\(over == 1 ? "" : "s").")
+            parts.append("You went over the \(s.pacePerDay.inrWhole) daily limit on \(over) day\(over == 1 ? "" : "s").")
         } else {
-            parts.append("You've stayed under the \(s.pacePerDay.inrWhole) daily pace every day.")
+            parts.append("You've stayed under your \(s.pacePerDay.inrWhole) daily limit every day.")
         }
         if s.isCurrentMonth && s.daysElapsed > 0 {
             let projected = s.averagePerDay * Double(s.daysInMonth)

@@ -15,6 +15,7 @@ struct AddSpendView: View {
     @State private var understood: ParsedSpend?
     @State private var parsing = false
     @State private var savedCount = 0
+    @State private var smsRef: String?
     @FocusState private var focusedField: Field?
 
     private enum Field { case sentence, note }
@@ -26,6 +27,7 @@ struct AddSpendView: View {
             header
             sentenceField
             if let understood { understoodChips(understood) }
+
             amountDisplay
             categoryPicker
             HStack(spacing: 10) {
@@ -60,7 +62,15 @@ struct AddSpendView: View {
             Spacer()
             Text("Add Spend").font(.system(size: 17, weight: .bold))
             Spacer()
-            Color.clear.frame(width: 40, height: 40)
+            // Paste a copied bank SMS to fill the form.
+            PasteButton(payloadType: String.self) { strings in
+                guard let text = strings.first else { return }
+                Task { @MainActor in pasteSMS(text) }
+            }
+            .labelStyle(.iconOnly)
+            .buttonBorderShape(.circle)
+            .tint(Theme.card2)
+            .accessibilityLabel("Paste bank SMS")
         }
     }
 
@@ -121,7 +131,8 @@ struct AddSpendView: View {
     private var amountDisplay: some View {
         let stats = MonthStats(all: expenses, month: .now, budget: budget.monthly)
         let isToday = Calendar.current.isDateInToday(date)
-        let leftAfter = stats.todayLimit - stats.todaySpent - amount
+        let plan = budget.plan(expenses)
+        let leftAfter = plan.todayLimit - plan.todaySpent - amount
 
         return VStack(spacing: 4) {
             HStack(alignment: .firstTextBaseline, spacing: 4) {
@@ -285,6 +296,25 @@ struct AddSpendView: View {
         }
     }
 
+    /// Fills the form from a copied bank SMS, or treats the text as a sentence.
+    private func pasteSMS(_ text: String) {
+        if let sms = BankSMSParser.parse(text) {
+            let rounded = (sms.amount * 100).rounded() / 100
+            amountText = rounded == rounded.rounded() ? String(Int(rounded)) : String(rounded)
+            category = sms.category
+            note = sms.payee ?? "Bank payment"
+            date = sms.date ?? .now
+            smsRef = sms.reference
+            withAnimation(.snappy) {
+                understood = ParsedSpend(amount: sms.amount, category: sms.category,
+                                         note: note, date: date, usedAppleIntelligence: false)
+            }
+        } else {
+            sentence = text
+            understandSentence()
+        }
+    }
+
     private func save() {
         guard amount > 0 else { return }
         // Keep today's current time so the list stays in order; use noon for past days.
@@ -294,8 +324,15 @@ struct AddSpendView: View {
         } else {
             when = .now
         }
+        if let ref = smsRef,
+           let existing = try? context.fetch(FetchDescriptor<Expense>(predicate: #Predicate { $0.smsRef == ref })),
+           !existing.isEmpty {
+            dismiss()   // already logged from this message
+            return
+        }
         let expense = Expense(amount: amount, category: category,
-                              note: note.trimmingCharacters(in: .whitespaces), date: when)
+                              note: note.trimmingCharacters(in: .whitespaces), date: when,
+                              source: smsRef == nil ? "manual" : "sms", smsRef: smsRef ?? "")
         context.insert(expense)
         try? context.save()
         savedCount += 1

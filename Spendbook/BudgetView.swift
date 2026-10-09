@@ -7,13 +7,16 @@ struct BudgetView: View {
     @State private var editing = false
 
     var body: some View {
-        let s = MonthStats(all: expenses, month: .now, budget: budget.monthly)
+        let s = MonthStats(all: expenses, month: .now, budget: budget.monthly, daily: budget.daily)
+        let plan = budget.plan(expenses)
         let limited = SpendCategory.allCases.filter { budget.limit(for: $0) != nil }
 
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    ringCard(s)
+                    ringCard(s, plan: plan)
+
+                    WeekStrip(plan: plan)
 
                     SectionHeader(title: "Category budgets")
                     VStack(spacing: 0) {
@@ -37,7 +40,7 @@ struct BudgetView: View {
                 .padding(.bottom, 32)
             }
             .scrollIndicators(.hidden)
-            .background(Theme.background)
+            .background(AmbientBackground())
             .navigationTitle("Budget")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -50,7 +53,7 @@ struct BudgetView: View {
         }
     }
 
-    private func ringCard(_ s: MonthStats) -> some View {
+    private func ringCard(_ s: MonthStats, plan: LimitPlan) -> some View {
         let over = s.remaining < 0
         return VStack(spacing: 14) {
             ZStack {
@@ -84,8 +87,8 @@ struct BudgetView: View {
 
             HStack {
                 stat("Spent", s.total.inrWhole, .white)
-                stat("Safe per day", s.safePerDay.inrWhole, Theme.accent)
-                stat("Days left", "\(s.daysLeftAfterToday)", .white)
+                stat("Today's limit", plan.todayLimit.inrWhole, plan.isOverToday ? Theme.warnText : Theme.accent)
+                stat("Week left", max(plan.weekLeft, 0).inrWhole, plan.weekLeft >= 0 ? .white : Theme.warnText)
             }
         }
         .padding(16)
@@ -157,9 +160,34 @@ struct BudgetEditView: View {
                             .font(.rounded(22, .bold))
                     }
                 } header: {
-                    Text("Monthly budget")
+                    Text("Monthly limit")
+                }
+
+                Section {
+                    HStack {
+                        Text("Weekly limit")
+                        Spacer()
+                        Text("₹").foregroundStyle(Theme.secondary)
+                        TextField("5833", text: amountBinding(\.weekly))
+                            .keyboardType(.numberPad)
+                            .multilineTextAlignment(.trailing)
+                            .frame(width: 110)
+                    }
+                    HStack {
+                        Text("Daily limit")
+                        Spacer()
+                        Text("₹").foregroundStyle(Theme.secondary)
+                        TextField("833", text: amountBinding(\.daily))
+                            .keyboardType(.numberPad)
+                            .multilineTextAlignment(.trailing)
+                            .frame(width: 110)
+                    }
+                    Button("Work out from monthly limit") { budget.splitMonthly() }
+                    Toggle("Take overspending out of the rest of the week", isOn: carryBinding)
+                } header: {
+                    Text("Weekly and daily limits")
                 } footer: {
-                    Text("Your daily limit is what's left of this, shared over the days remaining in the month.")
+                    Text("When this is on and you go over today's limit, the extra is taken out of the remaining days of the same week. Weeks run Monday to Sunday.")
                 }
 
                 Section("Category budgets") {
@@ -174,6 +202,16 @@ struct BudgetEditView: View {
                                 .frame(width: 110)
                         }
                     }
+                }
+
+                Section {
+                    NavigationLink {
+                        SMSSetupView()
+                    } label: {
+                        Label("Auto-add spends from bank SMS", systemImage: "message.badge.filled.fill")
+                    }
+                } footer: {
+                    Text("Uses a Shortcuts automation so debit messages from your bank are logged for you.")
                 }
 
                 Section {
@@ -208,6 +246,19 @@ struct BudgetEditView: View {
             }
         }
         .presentationBackground(Theme.sheet)
+    }
+
+    private func amountBinding(_ key: ReferenceWritableKeyPath<BudgetStore, Double>) -> Binding<String> {
+        Binding(
+            get: { String(Int(budget[keyPath: key])) },
+            set: { newValue in
+                if let v = Double(newValue.filter(\.isNumber)), v > 0 { budget[keyPath: key] = v }
+            }
+        )
+    }
+
+    private var carryBinding: Binding<Bool> {
+        Binding(get: { budget.carryOver }, set: { budget.carryOver = $0 })
     }
 
     private var monthlyBinding: Binding<String> {

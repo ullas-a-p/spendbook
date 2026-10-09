@@ -52,17 +52,30 @@ enum SpendCategory: String, CaseIterable, Identifiable, Codable, Sendable {
     /// Words that point to this category when parsing typed text.
     var keywords: [String] {
         switch self {
-        case .food: ["food", "lunch", "dinner", "breakfast", "tea", "coffee", "snack", "snacks", "swiggy", "zomato", "biryani", "meal", "restaurant", "juice", "chai", "hotel"]
+        case .food: ["food", "lunch", "dinner", "breakfast", "tea", "coffee", "snack", "snacks", "swiggy", "zomato", "biryani", "meal", "restaurant", "juice", "chai", "hotel", "cafe", "bakery", "dominos", "kfc", "mcdonalds", "starbucks", "eatsure", "chaayos"]
         case .groceries: ["grocery", "groceries", "supermarket", "vegetables", "veggies", "milk", "fruits", "rice", "bigbasket", "blinkit", "zepto"]
-        case .transport: ["bus", "auto", "uber", "ola", "taxi", "cab", "train", "metro", "ksrtc", "ticket", "rapido", "parking"]
-        case .fuel: ["petrol", "diesel", "fuel", "gas", "cng"]
-        case .shopping: ["shopping", "clothes", "shirt", "shoes", "amazon", "flipkart", "myntra", "gift", "dress"]
-        case .bills: ["bill", "bills", "electricity", "kseb", "wifi", "internet", "recharge", "mobile", "water", "broadband", "dth"]
+        case .transport: ["bus", "auto", "uber", "ola", "taxi", "cab", "train", "metro", "ksrtc", "ticket", "rapido", "parking", "irctc", "redbus", "fastag", "metro", "kmrl", "namma"]
+        case .fuel: ["petrol", "diesel", "fuel", "gas", "cng", "hpcl", "bpcl", "iocl", "indianoil", "shell"]
+        case .shopping: ["shopping", "clothes", "shirt", "shoes", "amazon", "flipkart", "myntra", "gift", "dress", "ajio", "meesho", "nykaa", "decathlon", "lifestyle", "trends", "lulu"]
+        case .bills: ["bill", "bills", "electricity", "kseb", "wifi", "internet", "recharge", "mobile", "water", "broadband", "dth", "airtel", "jio", "vi", "bsnl", "tatasky", "electricity", "kseb"]
         case .rent: ["rent", "hostel", "pg", "lease"]
-        case .health: ["medicine", "medicines", "doctor", "hospital", "pharmacy", "gym", "clinic", "tablet", "tablets"]
-        case .fun: ["movie", "movies", "netflix", "game", "games", "party", "trip", "outing", "concert", "spotify"]
+        case .health: ["medicine", "medicines", "doctor", "hospital", "pharmacy", "gym", "clinic", "tablet", "tablets", "apollo", "medplus", "pharmeasy", "netmeds", "1mg"]
+        case .fun: ["movie", "movies", "netflix", "game", "games", "party", "trip", "outing", "concert", "spotify", "bookmyshow", "pvr", "inox", "hotstar", "primevideo", "steam", "playstation"]
         case .other: []
         }
+    }
+}
+
+extension SpendCategory {
+    /// Best category for a piece of text, by keyword.
+    static func guess(from text: String) -> SpendCategory? {
+        let words = text.lowercased()
+            .components(separatedBy: CharacterSet.alphanumerics.inverted)
+            .filter { !$0.isEmpty }
+        for category in SpendCategory.allCases where category != .other {
+            if words.contains(where: { category.keywords.contains($0) }) { return category }
+        }
+        return nil
     }
 }
 
@@ -92,15 +105,24 @@ final class Expense {
     var note: String = ""
     var date: Date = Date()
     var createdAt: Date = Date()
+    /// "manual" or "sms".
+    var source: String = "manual"
+    /// Bank reference number (or a hash of the message) for SMS spends, to skip duplicates.
+    var smsRef: String = ""
 
-    init(amount: Double, category: SpendCategory, note: String, date: Date) {
+    init(amount: Double, category: SpendCategory, note: String, date: Date,
+         source: String = "manual", smsRef: String = "") {
         self.id = UUID()
         self.amount = amount
         self.categoryRaw = category.rawValue
         self.note = note
         self.date = date
         self.createdAt = Date()
+        self.source = source
+        self.smsRef = smsRef
     }
+
+    var isFromSMS: Bool { source == "sms" }
 
     var category: SpendCategory {
         get { SpendCategory(rawValue: categoryRaw) ?? .other }
@@ -132,6 +154,18 @@ final class BudgetStore {
         didSet { defaults.set(monthly, forKey: "monthlyBudget") }
     }
 
+    /// Daily and weekly limits, set by hand.
+    var daily: Double {
+        didSet { defaults.set(daily, forKey: "dailyLimit") }
+    }
+    var weekly: Double {
+        didSet { defaults.set(weekly, forKey: "weeklyLimit") }
+    }
+    /// Take today's overspend out of the rest of the week.
+    var carryOver: Bool {
+        didSet { defaults.set(carryOver, forKey: "carryOver") }
+    }
+
     /// Category raw value -> monthly limit.
     var perCategory: [String: Double] {
         didSet {
@@ -142,8 +176,15 @@ final class BudgetStore {
     }
 
     init() {
-        let stored = UserDefaults.standard.double(forKey: "monthlyBudget")
+        let d = UserDefaults.standard
+        let stored = d.double(forKey: "monthlyBudget")
         monthly = stored > 0 ? stored : 25000
+        let m = stored > 0 ? stored : 25000
+        let storedDaily = d.double(forKey: "dailyLimit")
+        daily = storedDaily > 0 ? storedDaily : (m / 30).rounded()
+        let storedWeekly = d.double(forKey: "weeklyLimit")
+        weekly = storedWeekly > 0 ? storedWeekly : (m * 7 / 30).rounded()
+        carryOver = d.object(forKey: "carryOver") as? Bool ?? true
         if let data = UserDefaults.standard.data(forKey: "categoryBudgets"),
            let decoded = try? JSONDecoder().decode([String: Double].self, from: data) {
             perCategory = decoded
@@ -153,4 +194,14 @@ final class BudgetStore {
     }
 
     func limit(for category: SpendCategory) -> Double? { perCategory[category.rawValue] }
+
+    /// Weekly and daily limits worked out from the monthly one.
+    func splitMonthly() {
+        weekly = (monthly * 7 / 30).rounded()
+        daily = (monthly / 30).rounded()
+    }
+
+    func plan(_ expenses: [Expense], now: Date = .now) -> LimitPlan {
+        LimitPlan(all: expenses, daily: daily, weekly: weekly, carryOver: carryOver, now: now)
+    }
 }

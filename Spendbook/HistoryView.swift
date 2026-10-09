@@ -70,7 +70,7 @@ struct HistoryView: View {
                         ForEach(group.items) { expense in
                             ExpenseRow(expense: expense, showDivider: false)
                                 .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
-                                .listRowBackground(Theme.card)
+                                .listRowBackground(Color.white.opacity(0.07))
                                 .swipeActions {
                                     Button("Delete", systemImage: "trash", role: .destructive) {
                                         withAnimation { context.delete(expense) }
@@ -91,7 +91,7 @@ struct HistoryView: View {
             .listStyle(.insetGrouped)
             .listSectionSpacing(14)
             .scrollContentBackground(.hidden)
-            .background(Theme.background)
+            .background(AmbientBackground())
             .navigationTitle("History")
             .searchable(text: $search, prompt: "Search spends or notes")
             .toolbar {

@@ -14,9 +14,20 @@ struct ExpenseRow: View {
                     Text(expense.title)
                         .font(.system(size: 16))
                         .lineLimit(1)
-                    Text("\(expense.category.name) · \(expense.date.time)")
-                        .font(.system(size: 13))
-                        .foregroundStyle(Theme.secondary)
+                    HStack(spacing: 5) {
+                        if expense.isFromSMS {
+                            Label("SMS", systemImage: "message.fill")
+                                .labelStyle(.titleAndIcon)
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundStyle(Theme.accent)
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 1)
+                                .background(Theme.accent.opacity(0.15), in: Capsule())
+                        }
+                        Text("\(expense.category.name) · \(expense.date.time)")
+                            .font(.system(size: 13))
+                            .foregroundStyle(Theme.secondary)
+                    }
                 }
                 Spacer(minLength: 8)
                 Text(expense.amount.inr)
