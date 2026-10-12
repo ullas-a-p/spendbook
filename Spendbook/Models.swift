@@ -195,10 +195,12 @@ final class BudgetStore {
 
     func limit(for category: SpendCategory) -> Double? { perCategory[category.rawValue] }
 
-    /// Weekly and daily limits worked out from the monthly one.
-    func splitMonthly() {
-        weekly = (monthly * 7 / 30).rounded()
-        daily = (monthly / 30).rounded()
+    /// Weekly and daily limits worked out from the monthly one,
+    /// using the number of days in the current month.
+    func splitMonthly(now: Date = .now) {
+        let days = Double(Calendar.current.range(of: .day, in: .month, for: now)?.count ?? 30)
+        daily = (monthly / days).rounded()
+        weekly = (monthly * 7 / days).rounded()
     }
 
     func plan(_ expenses: [Expense], now: Date = .now) -> LimitPlan {

@@ -161,6 +161,8 @@ struct BudgetEditView: View {
                     }
                 } header: {
                     Text("Monthly limit")
+                } footer: {
+                    Text("Changing this works out your weekly and daily limits for you. You can still adjust them below.")
                 }
 
                 Section {
@@ -182,12 +184,12 @@ struct BudgetEditView: View {
                             .multilineTextAlignment(.trailing)
                             .frame(width: 110)
                     }
-                    Button("Work out from monthly limit") { budget.splitMonthly() }
+                    Button("Reset to match monthly limit") { budget.splitMonthly() }
                     Toggle("Take overspending out of the rest of the week", isOn: carryBinding)
                 } header: {
                     Text("Weekly and daily limits")
                 } footer: {
-                    Text("When this is on and you go over today's limit, the extra is taken out of the remaining days of the same week. Weeks run Monday to Sunday.")
+                    Text("Worked out from your monthly limit, but you can type your own amounts. When the switch is on and you go over today's limit, the extra is taken out of the remaining days of the same week. Weeks run Monday to Sunday.")
                 }
 
                 Section("Category budgets") {
@@ -265,7 +267,10 @@ struct BudgetEditView: View {
         Binding(
             get: { String(Int(budget.monthly)) },
             set: { newValue in
-                if let v = Double(newValue.filter(\.isNumber)), v > 0 { budget.monthly = v }
+                if let v = Double(newValue.filter(\.isNumber)), v > 0 {
+                    budget.monthly = v
+                    budget.splitMonthly()   // weekly and daily follow the monthly limit
+                }
             }
         )
     }
